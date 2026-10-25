@@ -5,8 +5,8 @@ const walkthroughResultTimeoutMs = 60_000;
 
 /**
  * Waits for the app to report whether a `--walkthrough-file` can be applied. The
- * app checks the file before opening a window and writes `ready`, or
- * `unavailable` with the reason.
+ * app checks the file before opening a window and writes a `ready` line, or an
+ * `unavailable` line followed by the reason.
  */
 export const waitForWalkthroughResult = async (
   resultPath,
@@ -29,9 +29,12 @@ export const waitForWalkthroughResult = async (
     }
 
     try {
-      const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-      if (result?.status === 'ready' || result?.status === 'unavailable') {
-        return result;
+      const [status, ...reason] = readFileSync(resultPath, 'utf8').trimEnd().split('\n');
+      if (status === 'ready') {
+        return { status };
+      }
+      if (status === 'unavailable') {
+        return { reason: reason.join('\n'), status };
       }
     } catch {}
 

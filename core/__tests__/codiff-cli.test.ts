@@ -819,7 +819,7 @@ test('packaged terminal helper forwards pre-authored walkthrough files', async (
       repositoryPath,
     ],
     {
-      env: { ...logger.env, FAKE_WALKTHROUGH_RESULT: '{"pid":1,"status":"ready"}' },
+      env: { ...logger.env, FAKE_WALKTHROUGH_RESULT: 'ready' },
     },
   );
 
@@ -834,7 +834,7 @@ test('packaged terminal helper forwards pre-authored walkthrough files', async (
     '--walkthrough-file',
     walkthroughFile,
     '--walkthrough-result-file',
-    expect.stringMatching(/codiff-walkthrough-result\.[^/]+\/result\.json$/),
+    expect.stringMatching(/codiff-walkthrough-result\.[^/]+\/result\.txt$/),
     '--walkthrough',
     repositoryPath,
   ]);
@@ -855,11 +855,7 @@ test('packaged terminal helper fails when the app cannot apply the walkthrough f
       {
         env: {
           ...logger.env,
-          FAKE_WALKTHROUGH_RESULT: JSON.stringify({
-            pid: 1,
-            reason: 'Unresolved hunk ids: README.md:.1.',
-            status: 'unavailable',
-          }),
+          FAKE_WALKTHROUGH_RESULT: 'unavailable\nUnresolved hunk ids: README.md:.1.',
         },
       },
     ),

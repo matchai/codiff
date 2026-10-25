@@ -692,7 +692,7 @@ print_update_notice
 walkthrough_result_file_path=""
 if [ -n "$walkthrough_file_path" ] && [ "$walkthrough" -eq 1 ]; then
   walkthrough_result_directory="$(mktemp -d "${TMPDIR:-/tmp}/codiff-walkthrough-result.XXXXXX")"
-  walkthrough_result_file_path="$walkthrough_result_directory/result.json"
+  walkthrough_result_file_path="$walkthrough_result_directory/result.txt"
   trap 'rm -rf "$walkthrough_result_directory"' EXIT INT TERM
 fi
 
@@ -759,12 +759,12 @@ if [ -n "$walkthrough_result_file_path" ]; then
   # Covers app startup and the diff read, which can include fetching a pull request.
   walkthrough_wait_attempts=0
   while :; do
-    if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' "$walkthrough_result_file_path" 2>/dev/null; then
+    walkthrough_status="$(head -n 1 "$walkthrough_result_file_path" 2>/dev/null)"
+    if [ "$walkthrough_status" = "ready" ]; then
       exit 0
     fi
-    if grep -Eq '"status"[[:space:]]*:[[:space:]]*"unavailable"' "$walkthrough_result_file_path" 2>/dev/null; then
-      plutil -extract reason raw -o - "$walkthrough_result_file_path" >&2 ||
-        printf '%s\n' "codiff: Codiff could not apply the walkthrough file." >&2
+    if [ "$walkthrough_status" = "unavailable" ]; then
+      tail -n +2 "$walkthrough_result_file_path" >&2
       exit 1
     fi
     walkthrough_wait_attempts=$((walkthrough_wait_attempts + 1))

@@ -305,7 +305,7 @@ const run = async () => {
       ? mkdtempSync(join(tmpdir(), 'codiff-walkthrough-result-'))
       : null;
   const walkthroughResultPath = walkthroughResultDirectory
-    ? join(walkthroughResultDirectory, 'result.json')
+    ? join(walkthroughResultDirectory, 'result.txt')
     : '';
   const childEnv = {
     ...process.env,

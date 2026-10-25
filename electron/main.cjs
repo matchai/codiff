@@ -1360,7 +1360,8 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
   try {
     writeFileSync(
       walkthroughResultFile,
-      `${JSON.stringify(reason ? { reason, status: 'unavailable' } : { status: 'ready' })}\n`,
+      // Plain text so the shell launcher can read it: the status line, then the reason.
+      reason ? `unavailable\n${reason}\n` : 'ready\n',
       'utf8',
     );
   } catch {
