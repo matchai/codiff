@@ -145,6 +145,13 @@ const windowRepositories = new Map();
 const windowLaunchOptions = new Map();
 /** @type {Map<number, Promise<RepositoryState>>} */
 const windowInitialRepositoryStates = new Map();
+/**
+ * Repository state a walkthrough-file launch already read and checked. The
+ * window's first walkthrough load reuses it instead of reading the diff again.
+ *
+ * @type {Map<number, Promise<RepositoryState>>}
+ */
+const windowWalkthroughFileStates = new Map();
 /** @type {Map<number, number>} */
 const walkthroughProgressGenerations = new Map();
 /** @type {Map<number, string>} */
@@ -1125,6 +1132,7 @@ const createWindow = (
     windowIdentities.delete(webContentsId);
     windowRevealControllers.delete(webContentsId);
     windowInitialRepositoryStates.delete(webContentsId);
+    windowWalkthroughFileStates.delete(webContentsId);
     walkthroughProgressGenerations.delete(webContentsId);
     windowRepositories.delete(webContentsId);
     windowLaunchOptions.delete(webContentsId);
@@ -1173,6 +1181,7 @@ const createWindow = (
   } else {
     window.loadURL(pathToFileURL(join(root, 'dist/index.html')).toString());
   }
+  return window;
 };
 
 /** @param {import('electron').BrowserWindow} window */
@@ -1273,8 +1282,8 @@ const focusOrCreateWindow = (
   repositoryPath,
   launchOptions = { repositoryPathProvided: true, walkthrough: false },
   preloadedRepositoryState = undefined,
+  identity = getWindowIdentity(repositoryPath, launchOptions),
 ) => {
-  const identity = getWindowIdentity(repositoryPath, launchOptions);
   const matchingWebContentsId = findMatchingWindowIdentity(identity, windowIdentities);
   const matchingWindow =
     matchingWebContentsId == null
@@ -1355,6 +1364,8 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
   pendingWalkthroughFileChecks += 1;
   const repositoryState = readInitialRepositoryStateWithConfig(repositoryPath, launchOptions);
   repositoryState.catch(() => {});
+  // Window identity runs synchronous git calls; overlap them with the read.
+  const identity = getWindowIdentity(repositoryPath, launchOptions);
   const reason = await checkWalkthroughFile(walkthroughFile, repositoryState);
   pendingWalkthroughFileChecks -= 1;
   try {
@@ -1369,7 +1380,8 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
   }
 
   if (!reason) {
-    focusOrCreateWindow(repositoryPath, launchOptions, repositoryState);
+    const window = focusOrCreateWindow(repositoryPath, launchOptions, repositoryState, identity);
+    windowWalkthroughFileStates.set(window.webContents.id, repositoryState);
   } else if (BrowserWindow.getAllWindows().length === 0) {
     app.quit();
   }
@@ -1774,10 +1786,14 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
 
   try {
     const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
-    const state = await readRepositoryStateWithConfig(
-      repositoryPath,
-      source || launchOptions?.source,
-    );
+    const launchState = windowWalkthroughFileStates.get(event.sender.id);
+    windowWalkthroughFileStates.delete(event.sender.id);
+    const checkedState =
+      launchState && !options?.force ? await launchState.catch(() => null) : null;
+    const state =
+      checkedState && (!source || JSON.stringify(source) === JSON.stringify(checkedState.source))
+        ? checkedState
+        : await readRepositoryStateWithConfig(repositoryPath, source || launchOptions?.source);
     const agent = resolveWindowAgent(event.sender.id);
     const walkthroughFile = launchOptions?.walkthroughFile;
     if (walkthroughFile) {
