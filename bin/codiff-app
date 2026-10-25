@@ -657,6 +657,9 @@ open_codiff() {
   if [ -n "$plan_file_path" ]; then
     set -- --plan-file "$plan_file_path" "$@"
   fi
+  if [ -n "$walkthrough_result_file_path" ]; then
+    set -- --walkthrough-result-file "$walkthrough_result_file_path" "$@"
+  fi
   if [ -n "$walkthrough_file_path" ]; then
     set -- --walkthrough-file "$walkthrough_file_path" "$@"
   fi
@@ -683,6 +686,15 @@ open_codiff() {
 }
 
 print_update_notice
+
+# The app opens detached, so it reports whether it applied the walkthrough file
+# here; otherwise a file it rejects would still exit 0.
+walkthrough_result_file_path=""
+if [ -n "$walkthrough_file_path" ] && [ "$walkthrough" -eq 1 ]; then
+  walkthrough_result_directory="$(mktemp -d "${TMPDIR:-/tmp}/codiff-walkthrough-result.XXXXXX")"
+  walkthrough_result_file_path="$walkthrough_result_directory/result.json"
+  trap 'rm -rf "$walkthrough_result_directory"' EXIT INT TERM
+fi
 
 if [ -n "$plan_file_path" ]; then
   if [ -z "$plan_result_file_path" ]; then
@@ -741,4 +753,25 @@ elif [ "$walkthrough" -eq 1 ]; then
   open_codiff --walkthrough "$repository_path"
 else
   open_codiff "$repository_path"
+fi
+
+if [ -n "$walkthrough_result_file_path" ]; then
+  # Covers app startup and the diff read, which can include fetching a pull request.
+  walkthrough_wait_attempts=0
+  while :; do
+    if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' "$walkthrough_result_file_path" 2>/dev/null; then
+      exit 0
+    fi
+    if grep -Eq '"status"[[:space:]]*:[[:space:]]*"unavailable"' "$walkthrough_result_file_path" 2>/dev/null; then
+      plutil -extract reason raw -o - "$walkthrough_result_file_path" >&2 ||
+        printf '%s\n' "codiff: Codiff could not apply the walkthrough file." >&2
+      exit 1
+    fi
+    walkthrough_wait_attempts=$((walkthrough_wait_attempts + 1))
+    if [ "$walkthrough_wait_attempts" -ge 1200 ]; then
+      printf '%s\n' "codiff: Codiff did not check the walkthrough within 60 seconds." >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
 fi

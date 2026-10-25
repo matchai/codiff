@@ -92,6 +92,7 @@ const {
   writeWindowState,
 } = require('./window-state.cjs');
 const {
+  assertWalkthroughHunkIdsResolve,
   getNarrativeWalkthroughCacheKey,
   normalizeNarrativeWalkthrough,
   readNarrativeWalkthrough,
@@ -948,6 +949,7 @@ const createWindow = (
   repositoryPath,
   launchOptions = { repositoryPathProvided: true, walkthrough: false },
   identity = getWindowIdentity(repositoryPath, launchOptions),
+  preloadedRepositoryState = undefined,
 ) => {
   const savedState = readWindowState();
   const validatedState = savedState
@@ -1010,7 +1012,8 @@ const createWindow = (
   windowLaunchOptions.set(webContentsId, launchOptions);
   const initialRepositoryStatePromise = launchOptions.planFile
     ? null
-    : readInitialRepositoryStateWithConfig(repositoryPath, launchOptions);
+    : preloadedRepositoryState ||
+      readInitialRepositoryStateWithConfig(repositoryPath, launchOptions);
   const initialRepositoryState = initialRepositoryStatePromise?.then((state) => {
     if (!window.isDestroyed()) {
       storeResolvedRepositoryState(webContentsId, state);
@@ -1269,6 +1272,7 @@ const shareSnapshot = async (context, snapshot) => {
 const focusOrCreateWindow = (
   repositoryPath,
   launchOptions = { repositoryPathProvided: true, walkthrough: false },
+  preloadedRepositoryState = undefined,
 ) => {
   const identity = getWindowIdentity(repositoryPath, launchOptions);
   const matchingWebContentsId = findMatchingWindowIdentity(identity, windowIdentities);
@@ -1290,7 +1294,8 @@ const focusOrCreateWindow = (
       } else {
         windowInitialRepositoryStates.set(
           matchingWebContentsId,
-          readInitialRepositoryStateWithConfig(repositoryPath, launchOptions),
+          preloadedRepositoryState ||
+            readInitialRepositoryStateWithConfig(repositoryPath, launchOptions),
         );
       }
       if (identity) {
@@ -1302,7 +1307,71 @@ const focusOrCreateWindow = (
     return matchingWindow;
   }
 
-  return createWindow(repositoryPath, launchOptions, identity);
+  return createWindow(repositoryPath, launchOptions, identity, preloadedRepositoryState);
+};
+
+/**
+ * Why a walkthrough file cannot be applied to the diff, or null when it can.
+ *
+ * @param {string} walkthroughFile
+ * @param {Promise<RepositoryState>} repositoryState
+ */
+const checkWalkthroughFile = async (walkthroughFile, repositoryState) => {
+  let input;
+  try {
+    input = JSON.parse(readFileSync(walkthroughFile, 'utf8'));
+  } catch (error) {
+    return `Could not read walkthrough file: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  try {
+    const { files } = await repositoryState;
+    assertWalkthroughHunkIdsResolve(input, files);
+    normalizeNarrativeWalkthrough(input, files);
+    return null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return `Walkthrough file could not be applied to this diff: ${detail}`;
+  }
+};
+
+/** Launch checks still running; `activate` must not open their window unchecked. */
+let pendingWalkthroughFileChecks = 0;
+
+/**
+ * Opens a command-line launch. When a CLI waits on a walkthrough file, the file
+ * is checked against the diff before any window opens: the CLI gets the result
+ * either way, and a file that cannot be applied opens nothing.
+ *
+ * @param {string} repositoryPath
+ * @param {CodiffLaunchOptions} launchOptions
+ */
+const openLaunchWindow = async (repositoryPath, launchOptions) => {
+  const { walkthroughFile, walkthroughResultFile } = launchOptions;
+  if (!walkthroughFile || !walkthroughResultFile) {
+    focusOrCreateWindow(repositoryPath, launchOptions);
+    return;
+  }
+
+  pendingWalkthroughFileChecks += 1;
+  const repositoryState = readInitialRepositoryStateWithConfig(repositoryPath, launchOptions);
+  repositoryState.catch(() => {});
+  const reason = await checkWalkthroughFile(walkthroughFile, repositoryState);
+  pendingWalkthroughFileChecks -= 1;
+  try {
+    writeFileSync(
+      walkthroughResultFile,
+      `${JSON.stringify(reason ? { reason, status: 'unavailable' } : { status: 'ready' })}\n`,
+      'utf8',
+    );
+  } catch {
+    // The waiting process may have been interrupted and removed its temporary result directory.
+  }
+
+  if (!reason) {
+    focusOrCreateWindow(repositoryPath, launchOptions, repositoryState);
+  } else if (BrowserWindow.getAllWindows().length === 0) {
+    app.quit();
+  }
 };
 
 const INITIAL_UPDATE_CHECK_DELAY_MS = 10 * 1000;
@@ -1398,7 +1467,7 @@ if (squirrelStartup || !lock) {
     const launchPath = resolve(
       data.repositoryPath || getCommandLineRepositoryPath(commandLine) || workingDirectory,
     );
-    focusOrCreateWindow(
+    void openLaunchWindow(
       getInitialRepositoryPath(launchPath, launchOptions, config.settings.lastRepositoryPath),
       launchOptions,
     );
@@ -1438,7 +1507,7 @@ if (squirrelStartup || !lock) {
     setInterval(runScheduledUpdateCheck, UPDATE_CHECK_TIMER_INTERVAL_MS);
 
     const launchOptions = getLaunchOptions();
-    focusOrCreateWindow(
+    void openLaunchWindow(
       getInitialRepositoryPath(getLaunchPath(), launchOptions, config.settings.lastRepositoryPath),
       launchOptions,
     );
@@ -1479,7 +1548,7 @@ if (squirrelStartup || !lock) {
   app.on('will-quit', () => codexModelDiscoveryAbort.abort());
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (BrowserWindow.getAllWindows().length === 0 && pendingWalkthroughFileChecks === 0) {
       const launchOptions = getLaunchOptions();
       focusOrCreateWindow(
         getInitialRepositoryPath(
