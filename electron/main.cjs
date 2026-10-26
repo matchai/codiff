@@ -149,7 +149,7 @@ const windowInitialRepositoryStates = new Map();
  * Repository state a walkthrough-file launch already read and checked. The
  * window's first walkthrough load reuses it instead of reading the diff again.
  *
- * @type {Map<number, Promise<RepositoryState>>}
+ * @type {Map<number, RepositoryState>}
  */
 const windowWalkthroughFileStates = new Map();
 /** @type {Map<number, number>} */
@@ -1379,7 +1379,8 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
 
   if (!reason) {
     const window = focusOrCreateWindow(repositoryPath, launchOptions, repositoryState);
-    windowWalkthroughFileStates.set(window.webContents.id, repositoryState);
+    // The check passed, so the read already succeeded.
+    windowWalkthroughFileStates.set(window.webContents.id, await repositoryState);
   } else if (BrowserWindow.getAllWindows().length === 0) {
     app.quit();
   }
@@ -1784,14 +1785,12 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
 
   try {
     const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
-    const launchState = windowWalkthroughFileStates.get(event.sender.id);
+    // The window's first walkthrough load uses the state the launch check read.
+    const checkedState = windowWalkthroughFileStates.get(event.sender.id);
     windowWalkthroughFileStates.delete(event.sender.id);
-    const checkedState =
-      launchState && !options?.force ? await launchState.catch(() => null) : null;
     const state =
-      checkedState && (!source || JSON.stringify(source) === JSON.stringify(checkedState.source))
-        ? checkedState
-        : await readRepositoryStateWithConfig(repositoryPath, source || launchOptions?.source);
+      checkedState ??
+      (await readRepositoryStateWithConfig(repositoryPath, source || launchOptions?.source));
     const agent = resolveWindowAgent(event.sender.id);
     const walkthroughFile = launchOptions?.walkthroughFile;
     if (walkthroughFile) {
