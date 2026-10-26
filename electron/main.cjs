@@ -1282,8 +1282,8 @@ const focusOrCreateWindow = (
   repositoryPath,
   launchOptions = { repositoryPathProvided: true, walkthrough: false },
   preloadedRepositoryState = undefined,
-  identity = getWindowIdentity(repositoryPath, launchOptions),
 ) => {
+  const identity = getWindowIdentity(repositoryPath, launchOptions);
   const matchingWebContentsId = findMatchingWindowIdentity(identity, windowIdentities);
   const matchingWindow =
     matchingWebContentsId == null
@@ -1364,8 +1364,6 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
   pendingWalkthroughFileChecks += 1;
   const repositoryState = readInitialRepositoryStateWithConfig(repositoryPath, launchOptions);
   repositoryState.catch(() => {});
-  // Window identity runs synchronous git calls; overlap them with the read.
-  const identity = getWindowIdentity(repositoryPath, launchOptions);
   const reason = await checkWalkthroughFile(walkthroughFile, repositoryState);
   pendingWalkthroughFileChecks -= 1;
   try {
@@ -1380,7 +1378,7 @@ const openLaunchWindow = async (repositoryPath, launchOptions) => {
   }
 
   if (!reason) {
-    const window = focusOrCreateWindow(repositoryPath, launchOptions, repositoryState, identity);
+    const window = focusOrCreateWindow(repositoryPath, launchOptions, repositoryState);
     windowWalkthroughFileStates.set(window.webContents.id, repositoryState);
   } else if (BrowserWindow.getAllWindows().length === 0) {
     app.quit();
