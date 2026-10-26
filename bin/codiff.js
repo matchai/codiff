@@ -300,10 +300,9 @@ const run = async () => {
   const planResultPath = planResultDirectory ? join(planResultDirectory, 'result.json') : '';
   // The app launches detached, so wait for it to report whether it applied the
   // walkthrough file; otherwise a file it rejects would still exit 0 here.
-  const walkthroughResultDirectory =
-    walkthroughFilePath && walkthrough
-      ? mkdtempSync(join(tmpdir(), 'codiff-walkthrough-result-'))
-      : null;
+  const walkthroughResultDirectory = walkthroughFilePath
+    ? mkdtempSync(join(tmpdir(), 'codiff-walkthrough-result-'))
+    : null;
   const walkthroughResultPath = walkthroughResultDirectory
     ? join(walkthroughResultDirectory, 'result.txt')
     : '';

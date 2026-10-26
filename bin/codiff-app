@@ -690,7 +690,7 @@ print_update_notice
 # The app opens detached, so it reports whether it applied the walkthrough file
 # here; otherwise a file it rejects would still exit 0.
 walkthrough_result_file_path=""
-if [ -n "$walkthrough_file_path" ] && [ "$walkthrough" -eq 1 ]; then
+if [ -n "$walkthrough_file_path" ]; then
   walkthrough_result_directory="$(mktemp -d "${TMPDIR:-/tmp}/codiff-walkthrough-result.XXXXXX")"
   walkthrough_result_file_path="$walkthrough_result_directory/result.txt"
   trap 'rm -rf "$walkthrough_result_directory"' EXIT INT TERM
