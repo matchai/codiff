@@ -759,7 +759,10 @@ if [ -n "$walkthrough_result_file_path" ]; then
   # Covers app startup and the diff read, which can include fetching a pull request.
   walkthrough_wait_attempts=0
   while :; do
-    walkthrough_status="$(head -n 1 "$walkthrough_result_file_path" 2>/dev/null)"
+    walkthrough_status=""
+    if [ -s "$walkthrough_result_file_path" ]; then
+      walkthrough_status="$(head -n 1 "$walkthrough_result_file_path")"
+    fi
     if [ "$walkthrough_status" = "ready" ]; then
       exit 0
     fi

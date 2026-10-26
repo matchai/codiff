@@ -856,6 +856,8 @@ test('packaged terminal helper fails when the app cannot apply the walkthrough f
         env: {
           ...logger.env,
           FAKE_WALKTHROUGH_RESULT: 'unavailable\nUnresolved hunk ids: README.md:.1.',
+          // The app reports after the launcher starts waiting.
+          FAKE_WALKTHROUGH_RESULT_DELAY: '0.3',
         },
       },
     ),
